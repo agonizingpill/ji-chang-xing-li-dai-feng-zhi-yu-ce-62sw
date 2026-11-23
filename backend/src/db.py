@@ -56,6 +56,37 @@ def migrate():
           observed_peak INT NOT NULL CHECK (observed_peak >= 0), queue_minutes INT NOT NULL CHECK (queue_minutes >= 0), cause TEXT NOT NULL,
           action TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','actioned','closed')), reviewed_by INT REFERENCES users(id), reviewed_at TIMESTAMPTZ
         );
+        CREATE TABLE IF NOT EXISTS count_withdrawals (
+          id SERIAL PRIMARY KEY, wave_id INT NOT NULL REFERENCES flight_waves(id),
+          belt_code TEXT, window_start TIMESTAMPTZ NOT NULL, window_end TIMESTAMPTZ NOT NULL,
+          reason TEXT NOT NULL, withdrawn_by INT REFERENCES users(id),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CHECK (window_end > window_start)
+        );
+        CREATE INDEX IF NOT EXISTS idx_count_withdrawals_wave ON count_withdrawals(wave_id);
+        CREATE TABLE IF NOT EXISTS provisional_estimates (
+          id SERIAL PRIMARY KEY, wave_id INT NOT NULL REFERENCES flight_waves(id),
+          source_wave_id INT NOT NULL REFERENCES flight_waves(id),
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','invalidated')),
+          source_points INT NOT NULL CHECK (source_points >= 0),
+          planned_bags_ratio NUMERIC(12,6) NOT NULL,
+          raw_peak_bags NUMERIC(10,2) NOT NULL,
+          estimated_peak_bags NUMERIC(10,2) NOT NULL,
+          source_window_start TIMESTAMPTZ NOT NULL,
+          source_window_end TIMESTAMPTZ NOT NULL,
+          window_size INT NOT NULL, snapshot_hash TEXT NOT NULL,
+          result JSONB NOT NULL DEFAULT '{}'::jsonb,
+          invalidation_reason TEXT, invalidated_at TIMESTAMPTZ,
+          withdrawal_id INT REFERENCES count_withdrawals(id),
+          created_by INT REFERENCES users(id), created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_provisional_estimates_wave ON provisional_estimates(wave_id);
+        CREATE TABLE IF NOT EXISTS provisional_estimate_readings (
+          estimate_id INT NOT NULL REFERENCES provisional_estimates(id) ON DELETE CASCADE,
+          count_id INT NOT NULL REFERENCES belt_counts(id),
+          PRIMARY KEY (estimate_id, count_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_per_count ON provisional_estimate_readings(count_id);
         CREATE TABLE IF NOT EXISTS audit_logs (
           id SERIAL PRIMARY KEY, actor_id INT REFERENCES users(id), action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id INT, detail JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
